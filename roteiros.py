@@ -7,8 +7,10 @@ import os
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 gpt4o = ChatOpenAI(model_name="gpt-4o-mini")
+gpt4 = ChatOpenAI(model_name="gpt-4")   
 
 search_tool = SerperDevTool()
 dalle_tool = DallETool()
@@ -47,11 +49,12 @@ escritor_roteiro = Agent(
     goal = "Escrever um roteiro detalhado e envolvente para um vídeo sobre {tema}",
     verbose=True,
     memory=True,
-    backstory=
-        f"""Você é um contador de histórias talentoso, capaz de transformar 
-        informaçōes em narrativas criativas para vídeos."""
+    backstory=(
+        "Você é um contador de histórias talentoso, capaz de transformar "
+        "informaçōes em narrativas criativas para vídeos."
+    )
     ,
-    llm=gpt4o
+    llm=gpt4
 )
 
 # 4. Agente Especialista em SEO para YouTube
@@ -77,7 +80,7 @@ criador_prompt_dalle = Agent(
         "Você é especialista em criar descrições detalhadas e imaginativas que "
         "permitem ao DALL-E gerar imagens impressionantes com base em textos."
     ),
-    llm=gpt4o
+    llm=gpt4
 )
 
 # 6. Agente Gerador de Imagens com DALL-E
@@ -91,7 +94,7 @@ gerador_imagens = Agent(
         "capaz de transformar descrições em obras de arte visuais."
     ),
     tools=[dalle_tool],
-    llm=gpt4o
+    llm=gpt4
 )
 
 
@@ -109,7 +112,12 @@ revisor = Agent(
 )
 
 # 1. Tarefa Pesquisa
-tarefe_pesquisa = Task(
+
+def notificar_roteirista(output):
+    print(f"Tarefa de pesquisa concluída. Reultados: {output}")
+    
+
+tarefa_pesquisa = Task(
     description=(
         "Pesquisar informações detalhadas e relevantes sobre o tema: {tema}. "
         "Concentre-se em aspectos únicos e dados importantes que podem enriquecer o vídeo, "
@@ -117,21 +125,14 @@ tarefe_pesquisa = Task(
     ),
     agent=pesquisador,
     output_file="pesquisa.md",
-    expected_output="Informações detalhadas e relevantes sobre o {tema}."
+    expected_output="Informações detalhadas e relevantes sobre o {tema}.",
+    callback=notificar_roteirista,
+    tools=[search_tool]
     )
-# 2. Tarefa de Esrita de Títulos
-tarefa_titulos = Task(
-    description=(
-        "Criar títulos atraentes e otimizados para vídeos sobre o tema: {tema}. "    
-        "Certifique-se de que o título seja cativante e esteja otimizado para SEO. "
-        "Todo o texto deve estar em Português Brasil."
-    ),
-    expected_output="Um título otimizado para vídeo sobre {tema}.",
-    agent=escritor_titulos,
-)
 
-# 3. Tarefa de Escrita de Roteiro
-tarefe_roteiro = Task(
+
+# 2. Tarefa de Escrita de Roteiro
+tarefa_roteiro = Task(
     description=(
         "Escrever um roteiro detalhado e envolvente para um vídeo sobre o tema: {tema}. "
         "O roteiro deve ser envolvente e fornecer um fluxo lógico de informações. "
@@ -140,7 +141,21 @@ tarefe_roteiro = Task(
     ),
     expected_output="Um roteiro completo e bem estrtuturado para o vídeo sobre o {tema}.",
     agent=escritor_roteiro,
+    context=[tarefa_pesquisa]
 )
+
+# 3. Tarefa de Esrita de Títulos
+tarefa_titulos = Task(
+    description=(
+        "Criar títulos atraentes e otimizados para vídeos sobre o tema: {tema}. "    
+        "Certifique-se de que o título seja cativante e esteja otimizado para SEO. "
+        "Todo o texto deve estar em Português Brasil."
+    ),
+    expected_output="Um título otimizado para vídeo sobre {tema}.",
+    agent=escritor_titulos,
+    context=[tarefa_roteiro]
+)
+
 
 # 4. Tarefa de Otimização de SEO
 tarefa_seo = Task(
@@ -152,6 +167,7 @@ tarefa_seo = Task(
     ),
     expected_output="Um roteiro e título otimizados para o vídeo sobre o {tema}, prontos para publicação.",
     agent=especialisat_seo,
+    context=[tarefa_titulos, tarefa_roteiro]
 )
 
 # 5. Tarefa de Criação de Prompt para DALL-E
@@ -163,6 +179,7 @@ tarefa_criacao_prompt_dalle = Task(
     ),
     expected_output="Um prompt criativo e detalhado para gerar uma imagem com DALL-E sobre o {tema}.",
     agent=criador_prompt_dalle,
+    context=[tarefa_roteiro]
 )
 
 # 6. Tarefa de Geração de Imagem com DALL-E
@@ -183,14 +200,15 @@ tarefa_revisao = Task(
     ),
     expected_output="Conteúdo revisado, com links das imagens inclusos, pronto para entrega ao usuário.",
     agent=revisor,
+    context=[tarefa_titulos, tarefa_roteiro, tarefa_seo],
     output_file="conteudo_final.md"
 )
 
 # Formando a crew
 crew = Crew(
-    agents=[pesquisador, escritor_titulos, escritor_roteiro, especialisat_seo, criador_prompt_dalle, gerador_imagens, revisor],
-    tasks=[tarefe_pesquisa, tarefa_titulos, tarefe_roteiro, tarefa_seo, tarefa_criacao_prompt_dalle, tarefa_geracao_imagem, tarefa_revisao],
+    agents=[pesquisador, escritor_roteiro, escritor_titulos, especialisat_seo, criador_prompt_dalle, gerador_imagens, revisor],
+    tasks=[tarefa_pesquisa, tarefa_roteiro, tarefa_titulos, tarefa_seo, tarefa_criacao_prompt_dalle, tarefa_geracao_imagem, tarefa_revisao],
     process=Process.sequential
 )
 
-result = crew.kickoff(inputs={"tema":"Veículos Autônomos em Defesa e Segurança"})
+result = crew.kickoff(inputs={"tema":"Conflito recente entre Israel e Líbano"})
